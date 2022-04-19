@@ -2,6 +2,10 @@ import 'dart:collection';
 import 'dart:typed_data';
 import 'dart:ui';
 
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/src/util.dart';
 
@@ -18,7 +22,7 @@ import '../util.dart';
 ///It can be used to run a WebView in background without attaching an `InAppWebView` to the widget tree.
 ///
 ///Remember to dispose it when you don't need it anymore.
-class HeadlessInAppWebView implements WebView {
+class HeadlessInAppWebView extends StatefulWidget implements WebView {
   ///View ID.
   late final String id;
 
@@ -465,4 +469,132 @@ class HeadlessInAppWebView implements WebView {
   @override
   void Function(InAppWebViewController controller, LoginRequest loginRequest)?
       androidOnReceivedLoginRequest;
+
+
+
+  @override
+  _HeadlessInAppWebViewState createState() => _HeadlessInAppWebViewState();
 }
+
+class _HeadlessInAppWebViewState extends State<HeadlessInAppWebView> {
+  late InAppWebViewController _controller;
+
+  @override
+  Widget build(BuildContext context) {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      var useHybridComposition =
+          widget.initialOptions?.android.useHybridComposition ?? false;
+
+      if (!useHybridComposition && widget.pullToRefreshController != null) {
+        throw new Exception(
+            "To use the pull-to-refresh feature, useHybridComposition Android-specific option MUST be true!");
+      }
+
+      if (useHybridComposition) {
+        return PlatformViewLink(
+          viewType: 'com.pichillilorenzo/flutter_inappwebview',
+          surfaceFactory: (
+              BuildContext context,
+              PlatformViewController controller,
+              ) {
+            return AndroidViewSurface(
+              controller: controller as AndroidViewController,
+              gestureRecognizers:
+                  const <Factory<OneSequenceGestureRecognizer>>{},
+              hitTestBehavior: PlatformViewHitTestBehavior.opaque,
+            );
+          },
+          onCreatePlatformView: (PlatformViewCreationParams params) {
+            return PlatformViewsService.initSurfaceAndroidView(
+              id: params.id,
+              viewType: 'com.pichillilorenzo/flutter_inappwebview',
+              layoutDirection: TextDirection.rtl,
+              creationParams: <String, dynamic>{
+                'initialUrlRequest': widget.initialUrlRequest?.toMap(),
+                'initialFile': widget.initialFile,
+                'initialData': widget.initialData?.toMap(),
+                'initialOptions': widget.initialOptions?.toMap() ?? {},
+                'contextMenu': widget.contextMenu?.toMap() ?? {},
+                'windowId': widget.windowId,
+                'implementation': widget.implementation.toValue(),
+                'initialUserScripts':
+                widget.initialUserScripts?.map((e) => e.toMap()).toList() ??
+                    [],
+                'pullToRefreshOptions':
+                widget.pullToRefreshController?.options.toMap() ??
+                    PullToRefreshOptions(enabled: false).toMap()
+              },
+              creationParamsCodec: const StandardMessageCodec(),
+            )
+              ..addOnPlatformViewCreatedListener(params.onPlatformViewCreated)
+              ..addOnPlatformViewCreatedListener(
+                      (id) => _onPlatformViewCreated(id))
+              ..create();
+          },
+        );
+      } else {
+        return AndroidView(
+          viewType: 'com.pichillilorenzo/flutter_inappwebview',
+          onPlatformViewCreated: _onPlatformViewCreated,
+          layoutDirection: Directionality.maybeOf(context) ?? TextDirection.rtl,
+          creationParams: <String, dynamic>{
+            'initialUrlRequest': widget.initialUrlRequest?.toMap(),
+            'initialFile': widget.initialFile,
+            'initialData': widget.initialData?.toMap(),
+            'initialOptions': widget.initialOptions?.toMap() ?? {},
+            'contextMenu': widget.contextMenu?.toMap() ?? {},
+            'windowId': widget.windowId,
+            'implementation': widget.implementation.toValue(),
+            'initialUserScripts':
+            widget.initialUserScripts?.map((e) => e.toMap()).toList() ?? [],
+            'pullToRefreshOptions':
+            widget.pullToRefreshController?.options.toMap() ??
+                PullToRefreshOptions(enabled: false).toMap()
+          },
+          creationParamsCodec: const StandardMessageCodec(),
+        );
+      }
+    } else if (defaultTargetPlatform == TargetPlatform.iOS) {
+      return UiKitView(
+        viewType: 'com.pichillilorenzo/flutter_inappwebview',
+        onPlatformViewCreated: _onPlatformViewCreated,
+        creationParams: <String, dynamic>{
+          'initialUrlRequest': widget.initialUrlRequest?.toMap(),
+          'initialFile': widget.initialFile,
+          'initialData': widget.initialData?.toMap(),
+          'initialOptions': widget.initialOptions?.toMap() ?? {},
+          'contextMenu': widget.contextMenu?.toMap() ?? {},
+          'windowId': widget.windowId,
+          'implementation': widget.implementation.toValue(),
+          'initialUserScripts':
+          widget.initialUserScripts?.map((e) => e.toMap()).toList() ?? [],
+          'pullToRefreshOptions':
+          widget.pullToRefreshController?.options.toMap() ??
+              PullToRefreshOptions(enabled: false).toMap()
+        },
+        creationParamsCodec: const StandardMessageCodec(),
+      );
+    }
+    return Text(
+        '$defaultTargetPlatform is not yet supported by the flutter_inappwebview plugin');
+  }
+
+  @override
+  void didUpdateWidget(HeadlessInAppWebView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
+  }
+
+  void _onPlatformViewCreated(int id) {
+    _controller = InAppWebViewController(id, widget);
+    widget.pullToRefreshController?.initMethodChannel(id);
+    if (widget.onWebViewCreated != null) {
+      widget.onWebViewCreated!(_controller);
+    }
+  }
+}
+
